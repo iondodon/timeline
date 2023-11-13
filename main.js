@@ -113,29 +113,25 @@ const zoom = d3.zoom()
 svg.call(zoom);
 
 
-//////////////////////////
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        // Fetch the Markdown content from the public folder
+        const response = await fetch('/example.md');
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        const markdownText = await response.text();
 
-document.addEventListener('DOMContentLoaded', () => {
-    const markdownText = `
-    # Header
-    This is a paragraph with **bold** text and *italic* text.
+        // Convert Markdown to HTML
+        let htmlContent = marked(markdownText);
 
-    - List item 1
-    - List item 2
+        // Sanitize HTML content
+        htmlContent = DOMPurify.sanitize(htmlContent);
 
-    <img src="https://marinegeo.github.io/assets/img/MarineGEO_logo.png" alt="MarineGEO circle logo"/>
-
-    \`\`\`javascript
-    console.log('Hello, world!');
-    \`\`\`
-    `;
-
-    // Convert Markdown to HTML
-    let htmlContent = marked(markdownText);
-
-    // Sanitize HTML content
-    htmlContent = DOMPurify.sanitize(htmlContent);
-
-    // Insert the HTML content into the div
-    document.getElementById('markdown-content').innerHTML = htmlContent;
+        // Insert the HTML content into the div
+        document.getElementById('markdown-content').innerHTML = htmlContent;
+    } catch (error) {
+        console.error('Error fetching the Markdown file:', error);
+        // Handle errors (e.g., show a message to the user)
+    }
 });
