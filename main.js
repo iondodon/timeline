@@ -3,10 +3,46 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
 const events = [
-    { date: new Date('2021-01-01'), title: 'New Year' },
-    { date: new Date('2021-07-04'), title: 'Independence Day' },
-    // Add more events as needed
+    { date: new Date('2021-01-01'), title: 'New Year', lat: 40.7128, lng: -74.0060 }, // New York coordinates
+    { date: new Date('2021-07-04'), title: 'Independence Day', lat: 38.9072, lng: -77.0369 }, // Washington D.C. coordinates
+    // Add more events with their respective coordinates
 ];
+
+// Dimensions for the world map
+const mapWidth = document.getElementById('world-map').clientWidth;
+const mapHeight = document.getElementById('world-map').clientHeight;
+
+// Create SVG for the world map
+const mapSvg = d3.select('#world-map').append('svg')
+    .attr('width', mapWidth)
+    .attr('height', mapHeight);
+
+// Load and display the world map
+d3.json('/world.geojson').then(mapData => { // Define a projection
+ // Define a projection
+    const projection = d3.geoNaturalEarth1()
+        .fitSize([mapWidth, mapHeight], mapData);
+
+    // Define a path generator based on the projection
+    const path = d3.geoPath().projection(projection);
+
+    mapSvg.selectAll('path')
+        .data(mapData.features)
+        .enter().append('path')
+            .attr('d', path)
+            .attr('fill', '#ccc') // Style as needed
+            .attr('stroke', '#333'); // Style as needed
+    
+     // Display dots for each event
+    mapSvg.selectAll(".event-dot")
+        .data(events)
+        .enter().append("circle")
+            .attr("class", "event-dot")
+            .attr("cx", d => projection([d.lng, d.lat])[0])
+            .attr("cy", d => projection([d.lng, d.lat])[1])
+            .attr("r", 5) // Radius of the dots
+            .attr("fill", "red"); // Color of the dots
+});
 
 // Dimensions
 const width = document.getElementById('timeline').clientWidth;
