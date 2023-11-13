@@ -116,7 +116,7 @@ svg.call(zoom);
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         // Fetch the Markdown content from the public folder
-        const response = await fetch('/example.md');
+        const response = await fetch('/pages/example.md');
         if (!response.ok) {
             throw new Error(`HTTP error! Status: ${response.status}`);
         }
