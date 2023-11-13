@@ -1,4 +1,6 @@
 import * as d3 from 'd3';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 const events = [
     { date: new Date('2021-01-01'), title: 'New Year' },
@@ -109,3 +111,31 @@ const zoom = d3.zoom()
     .on('zoom', zoomed);
 
 svg.call(zoom);
+
+
+//////////////////////////
+
+document.addEventListener('DOMContentLoaded', () => {
+    const markdownText = `
+    # Header
+    This is a paragraph with **bold** text and *italic* text.
+
+    - List item 1
+    - List item 2
+
+    <img src="https://marinegeo.github.io/assets/img/MarineGEO_logo.png" alt="MarineGEO circle logo"/>
+
+    \`\`\`javascript
+    console.log('Hello, world!');
+    \`\`\`
+    `;
+
+    // Convert Markdown to HTML
+    let htmlContent = marked(markdownText);
+
+    // Sanitize HTML content
+    htmlContent = DOMPurify.sanitize(htmlContent);
+
+    // Insert the HTML content into the div
+    document.getElementById('markdown-content').innerHTML = htmlContent;
+});
