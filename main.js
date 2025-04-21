@@ -789,18 +789,103 @@ function goToSelectedDate() {
         .translate(targetX, 0)
         .scale(targetScale);
     
-    // Apply constraints and transition
+    // Apply constraints
     const constrainedTransform = constrainTransform(newTransform);
     
-    // Apply the transform with transition
-    svg.transition()
+    // Get current transform
+    const currentTransform = d3.zoomTransform(svg.node());
+    
+    // Create a custom transition
+    const customTransition = d3.transition()
         .duration(750)
-        .call(zoom.transform, constrainedTransform)
-        .on("end", () => {
-            updateVisualization(constrainedTransform);
-            if (mapData) {
-                updateMapVisualization(constrainedTransform);
-            }
+        .ease(d3.easeQuadInOut);
+
+    // Update the zoom transform
+    svg.transition(customTransition)
+        .call(zoom.transform, constrainedTransform);
+
+    // Create separate transition for visualization updates
+    const updateTransition = d3.transition()
+        .duration(750)
+        .ease(d3.easeQuadInOut)
+        .tween("update", () => {
+            const interpolateX = d3.interpolateNumber(currentTransform.x, constrainedTransform.x);
+            const interpolateY = d3.interpolateNumber(currentTransform.y, constrainedTransform.y);
+            const interpolateK = d3.interpolateNumber(currentTransform.k, constrainedTransform.k);
+            
+            return (t) => {
+                const transform = d3.zoomIdentity
+                    .translate(interpolateX(t), interpolateY(t))
+                    .scale(interpolateK(t));
+                
+                // Force update the axis and events
+                const newScale = transform.rescaleX(timeScale);
+                axis.call(d3.axisBottom(newScale).tickFormat(customTimeFormat));
+                
+                // Calculate visible range
+                const visibleRange = [
+                    newScale.invert(0),
+                    newScale.invert(width)
+                ];
+
+                // Filter and update events
+                const visibleEvents = events.filter(event => 
+                    event.date >= visibleRange[0] && event.date <= visibleRange[1]
+                );
+
+                const threshold = Math.max(20, 50 / transform.k);
+                const clusters = clusterEvents(visibleEvents, newScale, threshold);
+                calculateLabelPositions(clusters);
+
+                // Update event positions
+                const eventGroups = svg.selectAll(".event-group")
+                    .data(clusters, d => d.events[0].date.getTime());
+
+                // Remove old groups
+                eventGroups.exit().remove();
+
+                // Add new groups
+                const enterGroups = eventGroups.enter()
+                    .append("g")
+                    .attr("class", "event-group");
+
+                // Add lines to new groups
+                enterGroups.append("line")
+                    .attr("class", "event-line")
+                    .attr("x1", 0)
+                    .attr("y1", height / 2)
+                    .attr("x2", 0)
+                    .attr("y2", d => height / 2 - lineLength - d.yOffset)
+                    .attr("stroke", "black")
+                    .attr("stroke-width", 1)
+                    .style("visibility", "hidden");
+
+                // Add dots to new groups
+                enterGroups.append("circle")
+                    .attr("class", d => `event-dot${d.events.length > 1 ? ' cluster' : ''}`)
+                    .attr("cx", 0)
+                    .attr("cy", height / 2)
+                    .attr("r", d => Math.max(3, Math.min(8, Math.sqrt(d.events.length) * 3)))
+                    .attr("fill", d => d.events.length > 1 ? "red" : "blue");
+
+                // Add text to new groups
+                enterGroups.append("text")
+                    .attr("class", "event-text")
+                    .attr("x", 0)
+                    .attr("y", d => height / 2 - lineLength - textOffset - d.yOffset)
+                    .attr("text-anchor", "middle")
+                    .style("visibility", "hidden")
+                    .text(d => d.events.length > 1 ? `${d.events.length} events` : d.events[0].title);
+
+                // Update all groups
+                const allGroups = enterGroups.merge(eventGroups)
+                    .attr("transform", d => `translate(${newScale(d.events[0].date)},0)`);
+
+                // Update map if available
+                if (mapData) {
+                    updateMapVisualization(transform);
+                }
+            };
         });
 }
 
