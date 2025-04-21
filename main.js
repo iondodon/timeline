@@ -746,3 +746,48 @@ function calculateZoomTransform(mouseX, currentTransform, newScale) {
     // Apply constraints
     return constrainTransform(newTransform);
 }
+
+// Initialize the date picker with the current date and time
+const datePicker = document.getElementById('date-picker');
+const currentDate = new Date();
+datePicker.value = currentDate.toISOString().slice(0, 16); // Format: YYYY-MM-DDThh:mm
+
+// Function to go to selected date
+function goToSelectedDate() {
+    const selectedDate = new Date(datePicker.value);
+    
+    // Calculate dates for 6 months before and after the selected date
+    const startDate = new Date(selectedDate);
+    startDate.setMonth(startDate.getMonth() - 6);
+    
+    const endDate = new Date(selectedDate);
+    endDate.setMonth(endDate.getMonth() + 6);
+    
+    // Calculate the scale needed to fit this range
+    const targetScale = width / (timeScale(endDate) - timeScale(startDate));
+    
+    // Calculate the translation needed to center on the selected date
+    const targetX = width / 2 - timeScale(selectedDate) * targetScale;
+    
+    // Create new transform with the calculated scale and translation
+    const newTransform = d3.zoomIdentity
+        .translate(targetX, 0)
+        .scale(targetScale);
+    
+    // Apply constraints and transition
+    const constrainedTransform = constrainTransform(newTransform);
+    
+    // Apply the transform with transition
+    svg.transition()
+        .duration(750)
+        .call(zoom.transform, constrainedTransform)
+        .on("end", () => {
+            updateVisualization(constrainedTransform);
+            if (mapData) {
+                updateMapVisualization(constrainedTransform);
+            }
+        });
+}
+
+// Add event listener to the Go to Date button
+document.querySelector('.go-to-date').addEventListener('click', goToSelectedDate);
