@@ -20,6 +20,14 @@ const events = [
 const width = document.getElementById('timeline').clientWidth;
 const height = document.getElementById('timeline').clientHeight;
 
+// Enable zoom and pan on the timeline div and disable text selection
+const timelineDiv = d3.select('#timeline')
+    .style('cursor', 'grab')
+    .style('user-select', 'none')
+    .style('-webkit-user-select', 'none')
+    .style('-moz-user-select', 'none')
+    .style('-ms-user-select', 'none');
+
 // Define time scale boundaries
 const minDate = new Date('0000-01-01');
 const maxDate = new Date();
@@ -177,6 +185,19 @@ function positionTooltip(tooltip, event) {
         .style("top", top + "px");
 }
 
+// Debounce function to limit update frequency
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
 // Function to update timeline visualization
 function updateVisualization(transform) {
     // Ensure we have a valid transform object
@@ -186,6 +207,10 @@ function updateVisualization(transform) {
 
     // Calculate the new scale and threshold
     const newScale = transform.rescaleX(timeScale);
+    
+    // Update the axis first for immediate feedback
+    updateAxis(newScale);
+    
     const threshold = Math.max(20, 50 / transform.k); // Adjust threshold based on zoom level with minimum value
 
     // Get visible range
@@ -198,22 +223,32 @@ function updateVisualization(transform) {
     const visibleEvents = events.filter(event => 
         event.date >= visibleRange[0] && event.date <= visibleRange[1]
     );
+    
+    // Only proceed with update if we have events to show
+    if (visibleEvents.length === 0) {
+        return;
+    }
+
     const clusters = clusterEvents(visibleEvents, newScale, threshold);
     calculateLabelPositions(clusters);
 
     // Remove existing elements and tooltips
     removeAllTooltips();
-    svg.selectAll(".event-group").remove();
-
-    // Create groups for each cluster
+    
+    // Use more efficient D3 update pattern
     const eventGroups = svg.selectAll(".event-group")
-        .data(clusters)
-        .enter().append("g")
-        .attr("class", "event-group")
-        .attr("transform", d => `translate(${newScale(d.events[0].date)},0)`);
+        .data(clusters, d => d.events[0].date.getTime());
 
-    // Add lines
-    eventGroups.append("line")
+    // Remove old elements
+    eventGroups.exit().remove();
+
+    // Add new elements
+    const enterGroups = eventGroups.enter()
+        .append("g")
+        .attr("class", "event-group");
+
+    // Add lines to enter selection
+    enterGroups.append("line")
         .attr("class", "event-line")
         .attr("x1", 0)
         .attr("y1", height / 2)
@@ -224,14 +259,40 @@ function updateVisualization(transform) {
         .style("visibility", "hidden")
         .style("pointer-events", "none");
 
-    // Add dots with improved event handling
-    eventGroups.append("circle")
+    // Add dots to enter selection
+    enterGroups.append("circle")
         .attr("class", "event-dot")
         .attr("cx", 0)
         .attr("cy", height / 2)
         .attr("r", d => Math.max(3, Math.min(8, Math.sqrt(d.events.length) * 3)))
         .attr("fill", d => d.events.length > 1 ? "red" : "blue")
         .style("pointer-events", "all")
+        .style("cursor", d => d.events.length > 1 ? "pointer" : "default");
+
+    // Add text to enter selection
+    enterGroups.append("text")
+        .attr("class", "event-text")
+        .attr("x", 0)
+        .attr("y", d => height / 2 - lineLength - textOffset - d.yOffset)
+        .attr("text-anchor", "middle")
+        .style("visibility", "hidden")
+        .style("pointer-events", "none")
+        .text(d => d.events.length > 1 ? `${d.events.length} events` : d.events[0].title);
+
+    // Merge enter and update selections
+    const allGroups = enterGroups.merge(eventGroups);
+
+    // Update all groups with new positions
+    allGroups.attr("transform", d => `translate(${newScale(d.events[0].date)},0)`);
+
+    // Update event handlers
+    allGroups.selectAll(".event-dot")
+        .on("click", function(event, d) {
+            if (d.events.length > 1) {
+                event.stopPropagation();
+                zoomToEvents(d.events);
+            }
+        })
         .on("mouseover", function(event, d) {
             // Remove any existing tooltips first
             removeAllTooltips();
@@ -254,103 +315,190 @@ function updateVisualization(transform) {
             }
         })
         .on("mouseout", function(event, d) {
-            // Use setTimeout to prevent flickering when moving between dots
             setTimeout(() => {
-                // Only remove tooltip if we're not hovering over another dot
                 if (!d3.select(document.elementFromPoint(event.clientX, event.clientY)).classed('event-dot')) {
                     removeAllTooltips();
                 }
             }, 50);
 
-            // Hide the line and text
             d3.select(this.parentNode).select(".event-line")
                 .style("visibility", "hidden");
             d3.select(this.parentNode).select(".event-text")
                 .style("visibility", "hidden");
         });
-
-    // Add text labels
-    eventGroups.append("text")
-        .attr("class", "event-text")
-        .attr("x", 0)
-        .attr("y", d => height / 2 - lineLength - textOffset - d.yOffset)
-        .attr("text-anchor", "middle")
-        .style("visibility", "hidden")
-        .style("pointer-events", "none")
-        .text(d => d.events.length > 1 ? `${d.events.length} events` : d.events[0].title);
-
-    // Update the axis
-    updateAxis(newScale);
 }
+
+// Debounced version of updateVisualization for wheel events
+const debouncedUpdateVisualization = debounce((transform) => {
+    updateVisualization(transform);
+}, 50);
+
+// Handle wheel events at the SVG level with debouncing
+svg.on('wheel', null); // Remove the old wheel handler
+
+// Add wheel event handler to the timeline div
+timelineDiv.on('wheel', function(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const transform = d3.zoomTransform(svg.node());
+    const delta = event.deltaY;
+    const scaleFactor = delta > 0 ? 0.9 : 1.1;
+    const newScale = transform.k * scaleFactor;
+    
+    if (newScale >= 1 && newScale <= 1000000) {
+        const svgRect = svg.node().getBoundingClientRect();
+        const mouseX = event.clientX - svgRect.left;
+        const newTransform = calculateZoomTransform(mouseX, transform, newScale);
+        
+        // Update transform and visualization immediately
+        svg.call(zoom.transform, newTransform);
+        updateVisualization(newTransform);
+        if (mapData) {
+            updateMapVisualization(newTransform);
+        }
+    }
+}, { passive: false });
+
+// Timeline zoom functionality
+const zoom = d3.zoom()
+    .scaleExtent([1, 1000000])
+    .extent([[0, 0], [width, height]])
+    .translateExtent([[0, -Infinity], [width, Infinity]])
+    .on('zoom', event => {
+        if (event.sourceEvent && event.sourceEvent.type === 'wheel') {
+            // Let our custom wheel handler handle wheel-based zooming
+            return;
+        }
+        const constrainedTransform = constrainTransform(event.transform);
+        updateVisualization(constrainedTransform);
+        if (mapData) {
+            updateMapVisualization(constrainedTransform);
+        }
+    });
+
+// Apply zoom to the SVG
+svg.call(zoom);
+
+// Remove the wheel event handler from timelineDiv since we're handling it separately
+timelineDiv.on('wheel.zoom', null);
+
+// Add mousedown handler for panning
+timelineDiv.on('mousedown', function(event) {
+    if (event.button === 0) { // Left mouse button only
+        d3.select(this).style('cursor', 'grabbing');
+        
+        const startX = event.clientX;
+        const startTransform = d3.zoomTransform(svg.node());
+        
+        // Handle mouse move
+        const mousemove = (event) => {
+            event.preventDefault();
+            const dx = event.clientX - startX;
+            let newTransform = startTransform.translate(dx / startTransform.k, 0);
+            
+            // Apply constraints
+            newTransform = constrainTransform(newTransform);
+            
+            // Update transform and visualization immediately
+            svg.call(zoom.transform, newTransform);
+            updateVisualization(newTransform);
+            if (mapData) {
+                updateMapVisualization(newTransform);
+            }
+        };
+        
+        // Handle mouse up
+        const mouseup = (event) => {
+            d3.select(this).style('cursor', 'grab');
+            document.removeEventListener('mousemove', mousemove);
+            document.removeEventListener('mouseup', mouseup);
+        };
+        
+        // Add event listeners
+        document.addEventListener('mousemove', mousemove);
+        document.addEventListener('mouseup', mouseup);
+    }
+});
 
 // Function to update map visualization
 function updateMapVisualization(transform = null) {
     if (!mapData) return;
     
-    // Ensure we have a valid transform
     if (!transform) {
         transform = d3.zoomTransform(svg.node());
     }
 
     const mapWidth = document.getElementById('world-map').clientWidth;
     const mapHeight = document.getElementById('world-map').clientHeight;
-
-    // Get the current projection
     const projection = d3.geoNaturalEarth1()
         .fitSize([mapWidth, mapHeight], mapData);
 
-    // Get visible range from timeline
     const newScale = transform.rescaleX(timeScale);
     const visibleRange = [
         newScale.invert(0),
         newScale.invert(width)
     ];
 
-    // Filter events to visible range
     const visibleEvents = events.filter(event => 
         event.date >= visibleRange[0] && event.date <= visibleRange[1]
     );
 
-    // Clear existing dots
-    mapG.selectAll(".map-event-dot").remove();
-
-    // Cluster events based on both time and space
-    const threshold = Math.max(20, 50 / transform.k); // Adjust threshold based on zoom level with minimum value
+    const threshold = Math.max(20, 50 / transform.k);
     const clusters = clusterEvents(visibleEvents, newScale, threshold, projection);
 
-    // Add dots for clusters
+    // Use more efficient D3 update pattern for map dots
     const dots = mapG.selectAll(".map-event-dot")
-        .data(clusters)
-        .enter().append("circle")
+        .data(clusters, d => `${d.lat}-${d.lng}-${d.events[0].date.getTime()}`);
+
+    // Remove old dots
+    dots.exit().remove();
+
+    // Add new dots
+    const enterDots = dots.enter()
+        .append("circle")
         .attr("class", "map-event-dot")
+        .attr("opacity", 0.7)
+        .style("cursor", d => d.events.length > 1 ? "pointer" : "default");
+
+    // Update all dots
+    const allDots = enterDots.merge(dots)
         .attr("cx", d => projection([d.lng, d.lat])[0])
         .attr("cy", d => projection([d.lng, d.lat])[1])
         .attr("r", d => Math.max(3, Math.min(8, Math.sqrt(d.events.length) * 3)))
-        .attr("fill", d => d.events.length > 1 ? "red" : "blue")
-        .attr("opacity", 0.7)
+        .attr("fill", d => d.events.length > 1 ? "red" : "blue");
+
+    // Update event handlers
+    allDots
+        .on("click", function(event, d) {
+            if (d.events.length > 1) {
+                event.stopPropagation();
+                zoomToEvents(d.events);
+            }
+        })
         .on("mouseover", function(event, d) {
-            // Highlight corresponding timeline event
             svg.selectAll(".event-dot")
                 .filter(e => e.events.some(ev => d.events.includes(ev)))
                 .attr("stroke", "#333")
                 .attr("stroke-width", 2);
 
-            // Show tooltip
             createTooltip(event, {
                 events: d.events,
                 count: d.events.length
             });
         })
         .on("mouseout", function() {
-            // Remove highlight from timeline
             svg.selectAll(".event-dot")
                 .attr("stroke", null)
                 .attr("stroke-width", null);
-
-            // Remove tooltip
             removeAllTooltips();
         });
 }
+
+// Debounced version of updateMapVisualization
+const debouncedUpdateMapVisualization = debounce((transform) => {
+    updateMapVisualization(transform);
+}, 50);
 
 // Function to remove all tooltips
 function removeAllTooltips() {
@@ -421,15 +569,6 @@ function constrainTransform(transform) {
     return transform;
 }
 
-// Ensure zoomed function always updates both visualizations
-function zoomed(event) {
-    const constrainedTransform = constrainTransform(event.transform);
-    updateVisualization(constrainedTransform);
-    if (mapData) {
-        updateMapVisualization(constrainedTransform);
-    }
-}
-
 // Map initialization
 const mapWidth = document.getElementById('world-map').clientWidth;
 const mapHeight = document.getElementById('world-map').clientHeight;
@@ -475,120 +614,6 @@ d3.json('/world.geojson').then(data => {
 // Initial timeline visualization
 updateVisualization();
 
-// Timeline zoom functionality
-const zoom = d3.zoom()
-    .scaleExtent([1, 1000000])
-    .extent([[0, 0], [width, height]])
-    .translateExtent([[0, -Infinity], [width, Infinity]])
-    .on('zoom', event => {
-        if (event.sourceEvent && event.sourceEvent.type === 'wheel') {
-            // Let the wheel event handler handle wheel-based zooming
-            return;
-        }
-        zoomed(event);
-    });
-
-// Function to calculate zoom transform based on mouse position
-function calculateZoomTransform(mouseX, currentTransform, newScale) {
-    // Calculate the date under the mouse pointer
-    const currentDate = timeScale.invert((mouseX - currentTransform.x) / currentTransform.k);
-    
-    // Calculate the new transform that keeps the date under the mouse pointer
-    const targetX = mouseX - timeScale(currentDate) * newScale;
-    let newTransform = d3.zoomIdentity
-        .translate(targetX, 0)
-        .scale(newScale);
-    
-    // Apply constraints
-    return constrainTransform(newTransform);
-}
-
-// Apply zoom to the entire SVG
-svg.call(zoom);
-
-// Enable zoom and pan on the entire timeline div and disable text selection
-const timelineDiv = d3.select('#timeline')
-    .style('cursor', 'grab')
-    .style('user-select', 'none')
-    .style('-webkit-user-select', 'none')
-    .style('-moz-user-select', 'none')
-    .style('-ms-user-select', 'none');
-
-// Also disable text selection on the SVG and its elements
-svg.style('user-select', 'none')
-    .style('-webkit-user-select', 'none')
-    .style('-moz-user-select', 'none')
-    .style('-ms-user-select', 'none');
-
-// Handle wheel events at the SVG level
-svg.on('wheel', function(event) {
-    event.preventDefault(); // Prevent page scrolling
-    event.stopPropagation(); // Stop event from bubbling
-    
-    // Get the current transform
-    const transform = d3.zoomTransform(svg.node());
-    
-    // Calculate new scale based on wheel delta
-    const delta = event.deltaY;
-    const scaleFactor = delta > 0 ? 0.9 : 1.1; // Zoom out for positive delta, in for negative
-    const newScale = transform.k * scaleFactor;
-    
-    // Ensure scale stays within bounds
-    if (newScale >= 1 && newScale <= 1000000) {
-        // Get mouse position relative to the SVG
-        const point = d3.pointer(event, svg.node());
-        const mouseX = point[0];
-
-        // Calculate and apply the new transform
-        const newTransform = calculateZoomTransform(mouseX, transform, newScale);
-        svg.call(zoom.transform, newTransform);
-    }
-}, { passive: false, capture: true }); // Use capture phase to handle event first
-
-timelineDiv.on('mousedown', function(event) {
-    if (event.button === 0) { // Left mouse button only
-        d3.select(this).style('cursor', 'grabbing');
-        
-        const startX = event.clientX;
-        const startTransform = d3.zoomTransform(svg.node());
-        
-        // Handle mouse move
-        const mousemove = (event) => {
-            event.preventDefault();
-            const dx = event.clientX - startX;
-            let newTransform = startTransform.translate(dx / startTransform.k, 0);
-            
-            // Apply constraints
-            newTransform = constrainTransform(newTransform);
-            
-            // Update the visualization with the new transform
-            const newScale = newTransform.rescaleX(timeScale);
-            updateAxis(newScale);
-            updateVisualization(newTransform);
-            if (mapData) {
-                updateMapVisualization(newTransform);
-            }
-            
-            // Apply the transform to the SVG
-            svg.call(zoom.transform, newTransform);
-        };
-        
-        // Handle mouse up
-        const mouseup = (event) => {
-            d3.select(this).style('cursor', 'grab');
-            document.removeEventListener('mousemove', mousemove);
-            document.removeEventListener('mouseup', mouseup);
-        };
-        
-        // Add event listeners
-        document.addEventListener('mousemove', mousemove);
-        document.addEventListener('mouseup', mouseup);
-    }
-});
-
-// Remove the wheel event handler from timelineDiv since we're handling it at SVG level
-timelineDiv.on('wheel', null);
-
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         // Fetch the Markdown content from the public folder
@@ -614,10 +639,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // Function to reset zoom to show full time range
 function resetZoom() {
-    // Reset to identity transform (no zoom, no translation)
+    const newTransform = d3.zoomIdentity;
     svg.transition()
-        .duration(750) // Smooth transition over 750ms
-        .call(zoom.transform, d3.zoomIdentity);
+        .duration(750)
+        .call(zoom.transform, newTransform)
+        .on("end", () => {
+            updateVisualization(newTransform);
+            if (mapData) {
+                updateMapVisualization(newTransform);
+            }
+        });
 }
 
 // Add reset zoom button functionality
@@ -641,3 +672,77 @@ document.addEventListener('mousemove', (event) => {
 
 // Clean up tooltips when leaving the timeline area
 timelineDiv.on('mouseleave', removeAllTooltips);
+
+// Function to zoom to specific events
+function zoomToEvents(events) {
+    if (!events || events.length === 0) return;
+
+    // Find the date range of the events
+    const dates = events.map(e => e.date);
+    const minDate = new Date(Math.min(...dates));
+    const maxDate = new Date(Math.max(...dates));
+    
+    // Calculate the center date of the events
+    const centerDate = new Date((minDate.getTime() + maxDate.getTime()) / 2);
+    
+    // Calculate the time range with padding
+    const timeRange = maxDate - minDate;
+    const padding = Math.max(timeRange * 0.2, 1000 * 60 * 60 * 24 * 30); // At least 30 days padding
+    const paddedMinDate = new Date(minDate.getTime() - padding);
+    const paddedMaxDate = new Date(maxDate.getTime() + padding);
+    
+    // Calculate the scale needed to fit this range
+    const targetScale = width / (timeScale(paddedMaxDate) - timeScale(paddedMinDate));
+    
+    // Calculate the translation needed to center the events
+    const targetX = width / 2 - timeScale(centerDate) * targetScale;
+    
+    // Create the new transform
+    const newTransform = d3.zoomIdentity
+        .translate(targetX, 0)
+        .scale(targetScale);
+    
+    // Apply constraints to the transform
+    const constrainedTransform = constrainTransform(newTransform);
+    
+    // Animate the transition and update visualization
+    svg.transition()
+        .duration(750)
+        .call(zoom.transform, constrainedTransform)
+        .on("end", () => {
+            updateVisualization(constrainedTransform);
+            if (mapData) {
+                updateMapVisualization(constrainedTransform);
+            }
+        });
+}
+
+// Add click handler to reset zoom when clicking on empty space
+svg.on("click", function(event) {
+    // Only reset if clicking on the background
+    if (event.target === this) {
+        resetZoom();
+    }
+});
+
+mapSvg.on("click", function(event) {
+    // Only reset if clicking on the background
+    if (event.target === this) {
+        resetZoom();
+    }
+});
+
+// Function to calculate zoom transform based on mouse position
+function calculateZoomTransform(mouseX, currentTransform, newScale) {
+    // Calculate the date under the mouse pointer
+    const currentDate = timeScale.invert((mouseX - currentTransform.x) / currentTransform.k);
+    
+    // Calculate the new transform that keeps the date under the mouse pointer
+    const targetX = mouseX - timeScale(currentDate) * newScale;
+    let newTransform = d3.zoomIdentity
+        .translate(targetX, 0)
+        .scale(newScale);
+    
+    // Apply constraints
+    return constrainTransform(newTransform);
+}
