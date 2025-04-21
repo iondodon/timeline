@@ -43,6 +43,7 @@ body {
 #timeline {
     width: 100%;
     height: 100%;
+    cursor: default;
 }
 
 #markdown-content {
@@ -75,6 +76,10 @@ body {
 
 .event-dot {
     transition: r 0.2s ease-in-out;
+    cursor: default;
+}
+
+.event-dot.cluster {
     cursor: pointer;
 }
 
@@ -85,6 +90,10 @@ body {
 
 .map-event-dot {
     transition: r 0.2s ease-in-out, opacity 0.2s ease-in-out;
+    cursor: default;
+}
+
+.map-event-dot.cluster {
     cursor: pointer;
 }
 

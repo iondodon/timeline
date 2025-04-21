@@ -22,7 +22,6 @@ const height = document.getElementById('timeline').clientHeight;
 
 // Enable zoom and pan on the timeline div and disable text selection
 const timelineDiv = d3.select('#timeline')
-    .style('cursor', 'grab')
     .style('user-select', 'none')
     .style('-webkit-user-select', 'none')
     .style('-moz-user-select', 'none')
@@ -261,7 +260,7 @@ function updateVisualization(transform) {
 
     // Add dots to enter selection
     enterGroups.append("circle")
-        .attr("class", "event-dot")
+        .attr("class", d => `event-dot${d.events.length > 1 ? ' cluster' : ''}`)
         .attr("cx", 0)
         .attr("cy", height / 2)
         .attr("r", d => Math.max(3, Math.min(8, Math.sqrt(d.events.length) * 3)))
@@ -386,7 +385,10 @@ timelineDiv.on('wheel.zoom', null);
 // Add mousedown handler for panning
 timelineDiv.on('mousedown', function(event) {
     if (event.button === 0) { // Left mouse button only
-        d3.select(this).style('cursor', 'grabbing');
+        d3.select(this)
+            .style('cursor', 'grabbing')
+            .style('cursor', '-webkit-grabbing')
+            .style('cursor', '-moz-grabbing');
         
         const startX = event.clientX;
         const startTransform = d3.zoomTransform(svg.node());
@@ -410,7 +412,8 @@ timelineDiv.on('mousedown', function(event) {
         
         // Handle mouse up
         const mouseup = (event) => {
-            d3.select(this).style('cursor', 'grab');
+            d3.select(this)
+                .style('cursor', null);
             document.removeEventListener('mousemove', mousemove);
             document.removeEventListener('mouseup', mouseup);
         };
@@ -419,6 +422,18 @@ timelineDiv.on('mousedown', function(event) {
         document.addEventListener('mousemove', mousemove);
         document.addEventListener('mouseup', mouseup);
     }
+});
+
+// Add hover effect for panning
+timelineDiv.on('mouseenter', function(event) {
+    if (event.buttons === 1) { // If left mouse button is pressed
+        d3.select(this).style('cursor', 'grabbing');
+    }
+});
+
+timelineDiv.on('mouseleave', function() {
+    d3.select(this).style('cursor', null);
+    removeAllTooltips();
 });
 
 // Function to update map visualization
@@ -457,7 +472,7 @@ function updateMapVisualization(transform = null) {
     // Add new dots
     const enterDots = dots.enter()
         .append("circle")
-        .attr("class", "map-event-dot")
+        .attr("class", d => `map-event-dot${d.events.length > 1 ? ' cluster' : ''}`)
         .attr("opacity", 0.7)
         .style("cursor", d => d.events.length > 1 ? "pointer" : "default");
 
