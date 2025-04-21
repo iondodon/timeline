@@ -74,9 +74,14 @@ body {
     font-size: 12px;
 }
 
-.event-dot {
+#timeline .event-dot {
     transition: r 0.2s ease-in-out;
-    cursor: default;
+    cursor: pointer !important;
+}
+
+#world-map .map-event-dot {
+    transition: r 0.2s ease-in-out, opacity 0.2s ease-in-out;
+    cursor: pointer !important;
 }
 
 .event-dot.cluster {
@@ -86,11 +91,6 @@ body {
 .event-dot:hover {
     stroke: #333;
     stroke-width: 2px;
-}
-
-.map-event-dot {
-    transition: r 0.2s ease-in-out, opacity 0.2s ease-in-out;
-    cursor: default;
 }
 
 .map-event-dot.cluster {

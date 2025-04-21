@@ -3,16 +3,34 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 
 const events = [
-    { date: new Date('2021-01-01'), title: 'New Year', lat: 40.7128, lng: -74.0060 }, // New York coordinates
-    { date: new Date('2021-07-04'), title: 'Independence Day', lat: 38.9072, lng: -77.0369 }, // Washington D.C. coordinates
-    { date: new Date('0001-07-04'), title: 'Independence Day', lat: 40.9072, lng: -40.0369 }, // Washington D.C. coordinates
-    // Add more events with their respective coordinates
+    { 
+        date: new Date('2021-01-01'), 
+        title: 'New Year', 
+        lat: 40.7128, 
+        lng: -74.0060,
+        markdown_file: 'new_year_2021.md'
+    },
+    { 
+        date: new Date('2021-07-04'), 
+        title: 'Independence Day', 
+        lat: 38.9072, 
+        lng: -77.0369,
+        markdown_file: 'independence_day_2021.md'
+    },
+    { 
+        date: new Date('0001-07-04'), 
+        title: 'Independence Day', 
+        lat: 40.9072, 
+        lng: -40.0369,
+        markdown_file: 'ancient_independence.md'
+    },
     // Generate many events
     ...Array(1000).fill().map((_, i) => ({
         date: new Date(2000 + Math.floor(i/100), i%12, Math.floor(Math.random() * 28) + 1),
         title: `Event ${i}`,
         lat: 30 + Math.random() * 30,
-        lng: -100 + Math.random() * 50
+        lng: -100 + Math.random() * 50,
+        markdown_file: `event_${i}.md`
     }))
 ];
 
@@ -266,7 +284,7 @@ function updateVisualization(transform) {
         .attr("r", d => Math.max(3, Math.min(8, Math.sqrt(d.events.length) * 3)))
         .attr("fill", d => d.events.length > 1 ? "red" : "blue")
         .style("pointer-events", "all")
-        .style("cursor", d => d.events.length > 1 ? "pointer" : "default");
+        .style("cursor", "pointer");
 
     // Add text to enter selection
     enterGroups.append("text")
@@ -286,12 +304,7 @@ function updateVisualization(transform) {
 
     // Update event handlers
     allGroups.selectAll(".event-dot")
-        .on("click", function(event, d) {
-            if (d.events.length > 1) {
-                event.stopPropagation();
-                zoomToEvents(d.events);
-            }
-        })
+        .on("click", handleEventClick)
         .on("mouseover", function(event, d) {
             // Remove any existing tooltips first
             removeAllTooltips();
@@ -474,23 +487,20 @@ function updateMapVisualization(transform = null) {
         .append("circle")
         .attr("class", d => `map-event-dot${d.events.length > 1 ? ' cluster' : ''}`)
         .attr("opacity", 0.7)
-        .style("cursor", d => d.events.length > 1 ? "pointer" : "default");
+        .style("pointer-events", "all")
+        .style("cursor", "pointer");
 
     // Update all dots
     const allDots = enterDots.merge(dots)
         .attr("cx", d => projection([d.lng, d.lat])[0])
         .attr("cy", d => projection([d.lng, d.lat])[1])
         .attr("r", d => Math.max(3, Math.min(8, Math.sqrt(d.events.length) * 3)))
-        .attr("fill", d => d.events.length > 1 ? "red" : "blue");
+        .attr("fill", d => d.events.length > 1 ? "red" : "blue")
+        .style("cursor", "pointer");
 
     // Update event handlers
     allDots
-        .on("click", function(event, d) {
-            if (d.events.length > 1) {
-                event.stopPropagation();
-                zoomToEvents(d.events);
-            }
-        })
+        .on("click", handleEventClick)
         .on("mouseover", function(event, d) {
             svg.selectAll(".event-dot")
                 .filter(e => e.events.some(ev => d.events.includes(ev)))
@@ -629,28 +639,63 @@ d3.json('/world.geojson').then(data => {
 // Initial timeline visualization
 updateVisualization();
 
-document.addEventListener('DOMContentLoaded', async () => {
+// Function to load and display markdown content
+async function loadMarkdownContent(markdownFile) {
     try {
-        // Fetch the Markdown content from the public folder
-        const response = await fetch('/pages/example.md');
+        const response = await fetch(`/pages/${markdownFile}`);
         if (!response.ok) {
             throw new Error(`HTTP error! Status: ${response.status}`);
         }
         const markdownText = await response.text();
-
+        
         // Convert Markdown to HTML
         let htmlContent = marked(markdownText);
-
+        
         // Sanitize HTML content
         htmlContent = DOMPurify.sanitize(htmlContent);
-
+        
         // Insert the HTML content into the div
         document.getElementById('markdown-content').innerHTML = htmlContent;
     } catch (error) {
-        console.error('Error fetching the Markdown file:', error);
-        // Handle errors (e.g., show a message to the user)
+        console.error('Error loading markdown file:', error);
+        document.getElementById('markdown-content').innerHTML = `
+            <div class="error-message">
+                <h2>Content Not Available</h2>
+                <p>The content for this event could not be loaded.</p>
+            </div>
+        `;
     }
-});
+}
+
+// Function to handle event click
+function handleEventClick(event, d) {
+    // If it's a cluster with multiple events, don't show markdown
+    if (d.events.length > 1) {
+        event.stopPropagation();
+        zoomToEvents(d.events);
+        return;
+    }
+    
+    // For single events, load the markdown content
+    const eventData = d.events[0];
+    if (eventData.markdown_file) {
+        loadMarkdownContent(eventData.markdown_file);
+        
+        // Highlight the selected event
+        svg.selectAll('.event-dot')
+            .classed('selected', false);
+        d3.select(event.currentTarget)
+            .classed('selected', true);
+            
+        // Also highlight on the map if available
+        if (mapData) {
+            mapG.selectAll('.map-event-dot')
+                .classed('selected', false)
+                .filter(md => md.events[0] === eventData)
+                .classed('selected', true);
+        }
+    }
+}
 
 // Function to reset zoom to show full time range
 function resetZoom() {
@@ -891,3 +936,13 @@ function goToSelectedDate() {
 
 // Add event listener to the Go to Date button
 document.querySelector('.go-to-date').addEventListener('click', goToSelectedDate);
+
+// Add CSS for selected events
+const style = document.createElement('style');
+style.textContent = `
+    .event-dot.selected, .map-event-dot.selected {
+        stroke: #ff5722;
+        stroke-width: 3px;
+    }
+`;
+document.head.appendChild(style);
