@@ -1,8 +1,129 @@
-#timeline {
-    width: 100%;
-    height: 200px;
+body {
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    overflow: hidden;
 }
 
-/* body {
-  overflow: hidden;
-} */
+.container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100vw;
+}
+
+.top-panel {
+    height: 30vh;
+    width: 100%;
+    border-bottom: 1px solid #ccc;
+}
+
+.bottom-container {
+    display: flex;
+    height: 70vh;
+    width: 100%;
+}
+
+.left-panel {
+    width: 50%;
+    height: 100%;
+    border-right: 1px solid #ccc;
+}
+
+.right-panel {
+    width: 50%;
+    height: 100%;
+}
+
+#world-map {
+    width: 100%;
+    height: 100%;
+}
+
+#timeline {
+    width: 100%;
+    height: 100%;
+}
+
+#markdown-content {
+    height: 100%;
+    width: 100%;
+    padding: 20px;
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+.tooltip {
+    position: absolute;
+    background: white;
+    padding: 10px;
+    border: 1px solid black;
+    border-radius: 5px;
+    pointer-events: none;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 1000;
+}
+
+.event-line {
+    stroke: #999;
+}
+
+.event-text {
+    font-size: 12px;
+}
+
+.event-dot {
+    transition: r 0.2s ease-in-out;
+    cursor: pointer;
+}
+
+.event-dot:hover {
+    stroke: #333;
+    stroke-width: 2px;
+}
+
+.map-event-dot {
+    transition: r 0.2s ease-in-out, opacity 0.2s ease-in-out;
+    cursor: pointer;
+}
+
+.map-event-dot:hover {
+    stroke: #333;
+    stroke-width: 2px;
+    opacity: 1 !important;
+}
+
+/* Highlight connected elements */
+.highlighted {
+    stroke: #333;
+    stroke-width: 2px;
+    opacity: 1;
+}
+
+.zoom-reset {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 8px 12px;
+    background-color: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+    z-index: 1000;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.zoom-reset:hover {
+    background-color: #f0f0f0;
+    border-color: #999;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.zoom-reset:active {
+    background-color: #e8e8e8;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    transform: translateY(1px);
+}
